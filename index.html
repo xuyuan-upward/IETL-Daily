@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily English Diary · 每日英语日记</title>
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{
+  "imports": {
+    "onnxruntime-web/wasm": "./vendor/onnxruntime-web/ort.wasm.min.js"
+  }
+}
+</script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="brand-mark">EN</span>
+      <div class="brand-text">
+        <h1>Daily English Diary</h1>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab is-active" data-tab="write" role="tab">写日记</button>
+      <button class="tab" data-tab="vocab" role="tab">生词本 <span class="badge" id="vocab-count">0</span></button>
+      <button class="tab" data-tab="history" role="tab">历史 <span class="badge" id="history-count">0</span></button>
+      <button class="tab" data-tab="settings" role="tab">设置</button>
+    </nav>
+  </div>
+</header>
+
+<main class="main">
+
+  <!-- ============ 写日记 ============ -->
+  <section class="panel is-active" id="panel-write">
+
+    <!-- 中文输入 -->
+    <div class="card write-card">
+      <div class="card-head">
+        <h2>写下今天的中文日记</h2>
+        <div class="card-tools">
+          <button class="btn btn-ghost btn-sm" id="btn-sample">填入示例</button>
+          <button class="btn btn-ghost btn-sm" id="btn-clear-zh">清空</button>
+        </div>
+      </div>
+      <textarea id="zh-input" class="textarea" rows="8"
+        placeholder="用中文随意写下今天发生的事、你的想法和感受……&#10;&#10;例如：我大约早上十点半起床。醒来后，我先拿起手机看看有没有消息，然后刷牙、洗脸。"></textarea>
+      <div class="card-foot">
+        <span class="hint" id="zh-count">0 字</span>
+        <button class="btn btn-pink" id="btn-translate">
+          <span class="btn-icon">✨</span> 生成英文日记
+        </button>
+      </div>
+    </div>
+
+    <!-- 逐段练习 -->
+    <div class="practice-wrap" id="practice-wrap">
+      <div class="practice-head">
+        <h2>📖 中文 + 英文逐段练习</h2>
+        <div class="practice-tools">
+          <button class="btn btn-pink btn-sm" id="btn-play-all">▶ 播放全文</button>
+          <button class="btn btn-soft btn-sm" id="btn-stop-all">■ 停止</button>
+          <label class="mini-check" title="整篇循环播放">
+            <input type="checkbox" id="loop-all">
+            <span>循环全文</span>
+          </label>
+          <select id="rate-all" class="voice-select rate-all" title="全文播放倍速">
+            <option value="0.5">0.5×</option>
+            <option value="0.75">0.75×</option>
+            <option value="1" selected>1×</option>
+            <option value="1.25">1.25×</option>
+            <option value="1.5">1.5×</option>
+            <option value="1.75">1.75×</option>
+            <option value="2">2×</option>
+          </select>
+          <select id="voice-select" class="voice-select" title="选择英音发音人"></select>
+          <span class="hint play-progress" id="play-progress"></span>
+        </div>
+        <div class="engine-hint" id="engine-hint"></div>
+      </div>
+
+      <div id="practice-list">
+        <p class="empty">先在上方写好中文日记，点击「✨ 生成英文日记」，这里会按段落生成中英对照练习卡片。</p>
+      </div>
+
+      <div class="voice-warning" id="voice-warning" hidden>
+        ⚠ 当前浏览器没有找到 <b>en-GB</b>（英式英语）语音包，已回退到其他英语语音。
+        Windows 可在「设置 → 时间和语言 → 语音」中添加 English (United Kingdom)；
+        或使用 Chrome / Edge 浏览器（内置 Google UK English 语音）。
+      </div>
+
+      <details class="edit-en">
+        <summary>✏️ 手动修改英文（改完自动同步到上方卡片）</summary>
+        <textarea id="en-output" class="textarea" rows="8"
+          placeholder="也可以直接把英文粘贴到这里。"></textarea>
+        <div class="card-foot">
+          <span class="hint" id="translate-source">未翻译</span>
+          <button class="btn btn-ghost btn-sm" id="btn-copy-en">复制英文</button>
+        </div>
+      </details>
+    </div>
+
+    <!-- 重点口语句块（老外高频口语总结） -->
+    <div class="card">
+      <div class="card-head">
+        <h2>✳ 重点口语句块</h2>
+        <div class="card-tools">
+          <span class="hint" id="collo-count">0 个表达</span>
+          <button class="btn btn-ghost btn-sm" id="btn-add-collo-vocab">＋ 全部加入生词本</button>
+        </div>
+      </div>
+      <p class="card-desc">
+        自动扫描你的英文日记，以「中文意思 + English chunk + 原文例句」列出
+        <b>native 真正高频使用的口语句块</b>（动词短语、口头禅、英式俚语、程度强化词）。
+        点击任意一行可以听该例句的英音朗读。
+      </p>
+      <div class="collo-list" id="collo-list">
+        <p class="empty">翻译完成后，这里会以表格形式列出这篇日记里的地道口语句块。</p>
+      </div>
+    </div>
+
+    <!-- 保存 -->
+    <div class="save-bar">
+      <button class="btn btn-pink btn-lg" id="btn-save">💾 保存日记</button>
+      <span class="hint">保存时会自动标注今天的生成日期，可在「历史」中随时回看</span>
+    </div>
+  </section>
+
+  <!-- ============ 生词本 ============ -->
+  <section class="panel" id="panel-vocab">
+    <div class="card">
+      <div class="card-head">
+        <h2>生词本</h2>
+        <div class="card-tools">
+          <input type="search" id="vocab-search" class="input-sm" placeholder="搜索单词或释义…">
+          <button class="btn btn-ghost btn-sm" id="btn-export-vocab">导出 JSON</button>
+          <button class="btn btn-ghost btn-sm btn-danger" id="btn-clear-vocab">清空</button>
+        </div>
+      </div>
+      <div class="vocab-list" id="vocab-list">
+        <p class="empty">生词本是空的。在练习卡片里点击高亮词汇，或在「老外高频口语总结」里一键收藏。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 历史 ============ -->
+  <section class="panel" id="panel-history">
+    <div class="card">
+      <div class="card-head">
+        <h2>历史日记</h2>
+        <button class="btn btn-ghost btn-sm btn-danger" id="btn-clear-history">清空全部</button>
+      </div>
+      <div class="history-list" id="history-list">
+        <p class="empty">还没有保存过日记。写完英文后点击「💾 保存日记」。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 设置 ============ -->
+  <section class="panel" id="panel-settings">
+    <div class="card">
+      <div class="card-head"><h2>翻译引擎</h2></div>
+      <p class="card-desc">
+        默认使用<b>免费翻译接口</b>，无需配置即可用。若填入自己的大模型 API Key，
+        则会改用 LLM 翻译 —— 输出的口语表达更地道、更像 native 现场叙述。
+      </p>
+
+      <div class="form">
+        <label class="field">
+          <span class="field-label">翻译方式</span>
+          <select id="set-engine">
+            <option value="auto">自动（有 Key 用 LLM，否则用免费接口）</option>
+            <option value="free">仅用免费翻译接口</option>
+            <option value="llm">仅用 LLM（需配置 Key）</option>
+          </select>
+        </label>
+
+        <div class="divider">LLM 配置（OpenAI 兼容接口）</div>
+
+        <label class="field">
+          <span class="field-label">Base URL</span>
+          <input type="text" id="set-baseurl" class="input"
+            placeholder="https://api.openai.com/v1">
+        </label>
+        <label class="field">
+          <span class="field-label">API Key</span>
+          <input type="password" id="set-apikey" class="input" placeholder="sk-…（仅保存在你本地浏览器）">
+        </label>
+        <label class="field">
+          <span class="field-label">模型名</span>
+          <input type="text" id="set-model" class="input" placeholder="gpt-4o-mini / deepseek-chat / qwen-plus">
+        </label>
+
+        <div class="divider">离线英音朗读（内置语音包，无需联网、无需 API Key）</div>
+
+        <label class="field field-check">
+          <input type="checkbox" id="set-offline-tts" checked>
+          <span class="field-label">启用内置离线英音（en-GB · Piper）</span>
+        </label>
+        <p class="hint">
+          语音包已随项目一起下载（<code>voices/</code> + <code>vendor/</code>），
+          在浏览器本地完成合成，<b>运行时不访问任何外部服务</b>。
+          首次朗读需要装载约 63MB 模型，之后会缓存在浏览器 OPFS 中，秒开。
+          勾选后优先级高于云端 TTS 与系统语音。
+        </p>
+        <p class="hint" id="offline-tts-status"></p>
+        <div class="form-actions">
+          <button class="btn btn-ghost" id="btn-warmup-tts">预载语音包</button>
+        </div>
+
+        <div class="divider">云端英音朗读（可选，OpenAI 兼容 /audio/speech）</div>
+
+        <label class="field">
+          <span class="field-label">TTS 模型名</span>
+          <input type="text" id="set-tts-model" class="input"
+            placeholder="留空则用浏览器系统语音；如 tts-1 / tts-1-hd">
+        </label>
+        <label class="field">
+          <span class="field-label">TTS 发音人</span>
+          <input type="text" id="set-tts-voice" class="input"
+            placeholder="alloy / echo / fable / onyx / nova / shimmer">
+        </label>
+        <p class="hint">
+          复用上面的 Base URL 与 API Key。填入 TTS 模型名后即改用<b>自带云端英音</b>，
+          不再依赖系统语音包；朗读失败会自动回退到系统语音。
+        </p>
+
+        <div class="form-actions">
+          <button class="btn btn-primary" id="btn-save-settings">保存设置</button>
+          <button class="btn btn-ghost" id="btn-test-llm">测试连通性</button>
+          <button class="btn btn-ghost" id="btn-test-tts">测试朗读</button>
+        </div>
+        <p class="hint" id="settings-msg"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><h2>关于英音朗读</h2></div>
+      <p class="card-desc">
+        朗读支持三种引擎，按「离线 → 云端 → 系统」自动择优，也可在上方手动关闭：
+      </p>
+      <ul class="bullet-list">
+        <li><b>📦 内置离线英音（推荐）</b>：随项目自带的 Piper en-GB 神经语音包，在浏览器内本地合成，<b>完全离线、不消耗流量、无需 API Key</b>，音质接近真人。首次使用需装载约 63MB 模型（之后缓存在浏览器里）。</li>
+        <li><b>☁️ 云端英音</b>：填入 TTS 模型名 + API Key 即可，音质稳定、不受系统语音包限制，朗读失败会自动回退。</li>
+        <li><b>💻 浏览器系统语音</b>：使用 Web Speech API，完全本地、无需 Key，音质取决于系统语音包：
+          <ul class="bullet-list">
+            <li><b>Chrome / Edge</b>：内置 Google UK English Female/Male，效果最好，推荐。</li>
+            <li><b>Windows 语音包</b>：设置 → 时间和语言 → 语音 → 添加 English (United Kingdom)，可得到 Microsoft Hazel / Sonia / Ryan。</li>
+            <li><b>Firefox</b>：依赖系统语音，英音支持较弱。</li>
+          </ul>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <span>Daily English Diary · 数据全部保存在本地浏览器，不会上传</span>
+</footer>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script src="ielts-data.js"></script>
+<script src="colloquial-phrases.js"></script>
+<script src="app.js"></script>
+<!-- 离线英音语音包（ESM + WASM，必须在 http:// 下运行） -->
+<script type="module" src="piper-tts.js"></script>
+</body>
+</html>

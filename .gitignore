@@ -1,0 +1,10 @@
+# IDE / 工具数据
+.codebuddy/
+
+# 临时文件
+.tmp-*
+*.log
+
+# 系统文件
+Thumbs.db
+.DS_Store
