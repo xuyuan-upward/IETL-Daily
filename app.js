@@ -97,7 +97,8 @@
     model: '',
     ttsModel: '',      // 云端 TTS 模型名（留空则用浏览器系统语音）
     ttsVoice: 'alloy', // 云端 TTS 发音人
-    offlineTts: true   // 是否启用内置离线英音语音包（优先级最高）
+    offlineTts: true,  // 是否启用内置离线英音语音包（优先级最高）
+    backToPlay: true   // 滚动离开时显示「回到朗读位置」悬浮按钮
   };
 
   function getSettings() {
@@ -1357,7 +1358,14 @@
 
       // 绑定当前段落的逐词高亮
       const card = document.querySelector('#practice-list .practice-card[data-idx="' + this.activeIdx + '"]');
-      if (card && card.scrollIntoView) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      if (card && card.scrollIntoView) {
+        const r = card.getBoundingClientRect();
+        const inView = r.bottom > 90 && r.top < window.innerHeight - 20;
+        // 用户滑走浏览别处时不强行拉回（交给「回到朗读位置」悬浮按钮）
+        if (inView || getSettings().backToPlay === false) {
+          card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
       if (SentTracker.attach(card, para.text)) {
         if (TTS.usesAudio()) SentTracker.trackAudio();
         else TTS.wordHook = function (ci) { SentTracker.highlightAtChar(ci); };
@@ -1453,6 +1461,50 @@
       if (btnPlay) btnPlay.innerHTML = isPlaying ? '❚❚ 暂停' : '▶ 播放这一段';
       const btnLoop = card.querySelector('[data-action="loop"]');
       if (btnLoop) btnLoop.classList.toggle('is-on', Boolean(ParaPlayers.paras[i] && ParaPlayers.paras[i].loop));
+    });
+    updateBackToPlay();
+  }
+
+  /* ==========================================================
+     「回到朗读位置」悬浮按钮
+     ========================================================== */
+
+  /** 当前正在朗读的段落卡片（逐段播放优先，其次整篇连读） */
+  function activeReadingCard() {
+    let idx = -1;
+    if (ParaPlayers.state !== 'idle' && ParaPlayers.activeIdx >= 0) idx = ParaPlayers.activeIdx;
+    else if (TTS.state !== 'idle' && TTS.index >= 0) idx = TTS.index;
+    if (idx < 0) return null;
+    return document.querySelector('#practice-list .practice-card[data-idx="' + idx + '"]');
+  }
+
+  /** 正在朗读且当前段落滚出视口 → 显示悬浮按钮 */
+  function updateBackToPlay() {
+    const btn = $('#btn-back-to-play');
+    if (!btn) return;
+    const card = getSettings().backToPlay !== false ? activeReadingCard() : null;
+    if (!card) { btn.hidden = true; return; }
+    const r = card.getBoundingClientRect();
+    const outOfView = r.bottom < 90 || r.top > window.innerHeight - 20;
+    btn.hidden = !outOfView;
+  }
+
+  // 滚动时检查（passive + rAF 节流，不影响滚动流畅度）
+  let btpTick = false;
+  window.addEventListener('scroll', () => {
+    if (btpTick) return;
+    btpTick = true;
+    requestAnimationFrame(() => { btpTick = false; updateBackToPlay(); });
+  }, { passive: true });
+
+  const btpBtn = $('#btn-back-to-play');
+  if (btpBtn) {
+    btpBtn.addEventListener('click', () => {
+      const card = activeReadingCard();
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(updateBackToPlay, 450);
+      }
     });
   }
 
@@ -1891,9 +1943,17 @@
     });
     if (i >= 0) {
       const el = $('#practice-list .practice-card.is-playing');
-      if (el && el.scrollIntoView) el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      if (el && el.scrollIntoView) {
+        const r = el.getBoundingClientRect();
+        const inView = r.bottom > 90 && r.top < window.innerHeight - 20;
+        // 用户滑走浏览别处时不强行拉回（交给「回到朗读位置」悬浮按钮）
+        if (inView || getSettings().backToPlay === false) {
+          el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+      }
     }
     updateProgress();
+    setTimeout(updateBackToPlay, 400);   // 等平滑滚动落定后再判定按钮显隐
   }
 
   function updateProgress() {
@@ -1917,6 +1977,7 @@
       btn.classList.remove('is-playing');
     }
     updateProgress();
+    updateBackToPlay();
   }
 
   /* ==========================================================
@@ -2630,7 +2691,8 @@
         model: $('#set-model').value.trim(),
         ttsModel: $('#set-tts-model').value.trim(),
         ttsVoice: $('#set-tts-voice').value.trim() || DEFAULT_SETTINGS.ttsVoice,
-        offlineTts: $('#set-offline-tts').checked
+        offlineTts: $('#set-offline-tts').checked,
+        backToPlay: $('#set-backtoplay').checked
       };
       saveSettings(s);
       TTS.loadVoices();   // 立即刷新朗读引擎（离线 / 云端 / 系统）
@@ -2811,6 +2873,7 @@
     $('#set-tts-model').value = s.ttsModel || '';
     $('#set-tts-voice').value = s.ttsVoice || DEFAULT_SETTINGS.ttsVoice;
     $('#set-offline-tts').checked = s.offlineTts !== false;
+    $('#set-backtoplay').checked = s.backToPlay !== false;
     renderOfflineTtsStatus();
   }
 

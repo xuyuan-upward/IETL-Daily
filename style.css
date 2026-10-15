@@ -1064,3 +1064,28 @@ code {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* 「回到朗读位置」悬浮按钮：正在朗读且当前段落滚出视口时出现 */
+.back-to-play {
+  position: fixed;
+  right: 16px;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  z-index: 90;
+  padding: 11px 18px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  box-shadow: 0 8px 24px rgba(99, 102, 241, .4);
+  cursor: pointer;
+  animation: btp-in .25s ease;
+}
+.back-to-play:active { transform: scale(.96); }
+.back-to-play[hidden] { display: none; }
+@keyframes btp-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}

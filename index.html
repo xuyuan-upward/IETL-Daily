@@ -225,6 +225,14 @@ if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
           <button class="btn btn-ghost" id="btn-warmup-tts">预载语音包</button>
         </div>
 
+        <div class="divider">播放辅助</div>
+
+        <label class="field field-check">
+          <input type="checkbox" id="set-backtoplay" checked>
+          <span class="field-label">滚动离开时显示「回到朗读位置」悬浮按钮</span>
+        </label>
+        <p class="hint">朗读过程中滑到页面其他地方时，右下角会出现悬浮按钮，点一下立即回到正在朗读的段落。</p>
+
         <div class="divider">云端英音朗读（可选，OpenAI 兼容 /audio/speech）</div>
 
         <label class="field">
@@ -275,6 +283,8 @@ if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
 <footer class="footer">
   <span>Daily English Diary · 数据全部保存在本地浏览器，不会上传</span>
 </footer>
+
+<button id="btn-back-to-play" class="back-to-play" hidden>🔊 回到朗读位置</button>
 
 <div class="toast-wrap" id="toast-wrap"></div>
 
