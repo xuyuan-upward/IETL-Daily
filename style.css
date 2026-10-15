@@ -1023,3 +1023,44 @@ code {
   .history-head { flex-wrap: wrap; }
   .history-meta { width: 100%; }
 }
+
+/* 语音装载/合成进度条：固定在语音选择栏下方，不再用 toast 跳动刷新 */
+.tts-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+.tts-progress[hidden] { display: none; }
+
+.tts-progress-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, .15);
+  overflow: hidden;
+}
+.tts-progress-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #6366f1, #a855f7);
+  transition: width .25s ease;
+}
+.tts-progress.is-indeterminate .tts-progress-fill {
+  width: 35%;
+  animation: tts-progress-slide 1.1s ease-in-out infinite;
+}
+@keyframes tts-progress-slide {
+  0% { margin-left: -35%; }
+  100% { margin-left: 100%; }
+}
+.tts-progress-text {
+  flex-shrink: 0;
+  max-width: 62%;
+  font-size: 12px;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

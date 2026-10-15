@@ -346,11 +346,14 @@ let speakQueue = Promise.resolve();
 
 async function doSpeak(key, onProgress) {
   const s = await init(onProgress);
-  const blob = await synthesizeWithPauses(s, key, onProgress);
+  // key = voiceId|text：合成前必须剥离语音包前缀，否则会把前缀也读出来
+  const text = key.slice(key.indexOf('|') + 1);
+  const blob = await synthesizeWithPauses(s, text, onProgress);
   if (!blob || !blob.size) throw new Error('离线合成返回了空音频');
 
   const url = URL.createObjectURL(blob);
   cachePut(key, url);
+  progressText = '';
   return url;
 }
 

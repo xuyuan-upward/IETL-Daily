@@ -704,20 +704,50 @@
     return Boolean(p && p.supported && getSettings().offlineTts !== false);
   }
 
-  /** 装载进度提示（63MB 模型首次装载较慢，需要可见反馈） */
-  let lastProgressToast = 0;
+  /** 装载/合成进度：固定在语音选择栏下方的进度条（不再用 toast 跳动刷新）。
+   *  进度文本里带百分比就走确定进度条，否则走滑动的不确定态。 */
+  let ttsProgressHideTimer = null;
   function showTtsProgress() {
+    const box = $('#tts-progress');
     const p = window.PiperTTS;
-    if (!p || !p.progress) return;
-    const now = Date.now();
-    if (now - lastProgressToast < 900) return;
-    lastProgressToast = now;
-    toast(p.progress, 'info', 1000);
+    if (!box || !p) return;
+    clearTimeout(ttsProgressHideTimer);
+    ttsProgressHideTimer = null;
+    box.hidden = false;
+    const fill = box.querySelector('.tts-progress-fill');
+    const label = box.querySelector('.tts-progress-text');
+    const text = p.progress || '正在处理语音…';
+    label.textContent = text;
+    const m = text.match(/(\d+)\s*%/);
+    if (m) {
+      box.classList.remove('is-indeterminate');
+      fill.style.width = Math.min(100, parseInt(m[1], 10)) + '%';
+    } else {
+      box.classList.add('is-indeterminate');
+      fill.style.width = '';
+    }
+  }
+
+  /** 语音处理结束：短暂展示后自动收起进度条 */
+  function scheduleHideTtsProgress(delay) {
+    const box = $('#tts-progress');
+    if (!box || box.hidden) return;
+    clearTimeout(ttsProgressHideTimer);
+    ttsProgressHideTimer = setTimeout(() => {
+      box.hidden = true;
+      ttsProgressHideTimer = null;
+    }, typeof delay === 'number' ? delay : 1200);
   }
 
   /** 本地合成一段语音，返回可播放的 objectURL（模块内部已带缓存） */
   function synthesizeOffline(text) {
-    return window.PiperTTS.speak(text, showTtsProgress);
+    return window.PiperTTS.speak(text, showTtsProgress).then((url) => {
+      scheduleHideTtsProgress(600);
+      return url;
+    }, (e) => {
+      scheduleHideTtsProgress(1500);
+      throw e;
+    });
   }
 
   /* ==========================================================
@@ -2444,6 +2474,7 @@
           toast('正在装载「' + label + '」语音包，完成后会提示…', 'info', 2600);
           window.PiperTTS.warmup(showTtsProgress).then((ok) => {
             renderVoiceSelect();
+            scheduleHideTtsProgress(ok ? 1200 : 3000);
             if (ok) toast('「' + label + '」已就绪，点击播放即可', 'ok', 3200);
             else toast('「' + label + '」装载失败：' + (window.PiperTTS.error || '未知错误'), 'err', 4500);
           });
@@ -2673,6 +2704,7 @@
       const timer = setInterval(renderOfflineTtsStatus, 500);
       const ok = await window.PiperTTS.warmup(showTtsProgress);
       clearInterval(timer);
+      scheduleHideTtsProgress(ok ? 1200 : 3000);
       setBusy(btn, false);
       renderOfflineTtsStatus();
 
