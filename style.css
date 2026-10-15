@@ -580,6 +580,16 @@ select:focus { border-color: var(--pink); box-shadow: 0 0 0 3px var(--pink-ring)
   background: rgba(232, 67, 147, .18);
   box-shadow: 0 0 0 3px rgba(232, 67, 147, .10);
 }
+/* 点读起点句：蓝色系，与正常跟读的粉色高亮一眼区分 */
+.sentence-start {
+  background: rgba(37, 99, 235, .22);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+  border-radius: 4px;
+}
+.sentence-start.sentence-read {
+  background: rgba(37, 99, 235, .08);
+  box-shadow: none;
+}
 
 /* 单词弹窗 */
 .word-pop {

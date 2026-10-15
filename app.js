@@ -1206,11 +1206,12 @@
      * 绑定某张练习卡片 + 它的朗读文本。
      * 卡片里的 .sentence span 与 splitSentences(text) 的句子按顺序一一对应。
      */
-    attach(card, text) {
+    attach(card, text, spanOffset) {
       this.detach();
       if (!card || !text) return false;
 
-      const spans = Array.from(card.querySelectorAll('.seg-text-en .sentence'));
+      // spanOffset：「点某句接着读」时跳过前 k 句，让 span 与剩余句子对齐
+      const spans = Array.from(card.querySelectorAll('.seg-text-en .sentence')).slice(spanOffset || 0);
       const sents = splitSentences(text);
       const n = Math.min(spans.length, sents.length);
       if (!n) return false;
@@ -1308,7 +1309,7 @@
     detach() {
       this._token++;
       if (this._raf) { cancelAnimationFrame(this._raf); this._raf = 0; }
-      this.spans.forEach((sp) => sp.classList.remove('sentence-reading', 'sentence-read'));
+      this.spans.forEach((sp) => sp.classList.remove('sentence-reading', 'sentence-read', 'sentence-start'));
       this.spans = [];
       this.sents = [];
       this.cur = -1;
@@ -1320,6 +1321,7 @@
     activeIdx: -1,
     state: 'idle',    // idle | playing | paused
     _token: 0,
+    _startSent: 0,    // 「点某句接着读」时，本段从第几句开始（只生效一次）
 
     /** 文本变化时同步段落内容，但保留每段的倍速/循环设置 */
     sync(paragraphTexts) {
@@ -1359,11 +1361,36 @@
       this._speakLoop(++this._token);   // token 自增让正在播的音频自然失效
     },
 
+    /** 点某句：从该句开始读，读完自动接着往下读（本段剩余句 → 后续段落） */
+    restartFrom(i, sentIdx) {
+      if (i < 0 || i >= this.paras.length) return;
+      TTS.stop();
+      this.activeIdx = i;
+      this._startSent = Math.max(0, sentIdx || 0);
+      this.state = 'playing';
+      this._speakLoop(++this._token);
+    },
+
     _speakLoop(token) {
       if (this.state !== 'playing' || token !== this._token) return;
       const para = this.paras[this.activeIdx];
       if (!para || !para.text) { this.stop(); return; }
       updateParaUI();
+
+      // 「点某句接着读」：本段只从第 startSent 句开始（后续段落仍从头读）
+      const startSent = this._startSent || 0;
+      this._startSent = 0;
+      let speakText = para.text;
+      if (startSent > 0) {
+        const sents = splitSentences(para.text);
+        let from = 0;
+        for (let j = 0; j < Math.min(startSent, sents.length); j++) {
+          const p = para.text.indexOf(sents[j], from);
+          from = (p < 0 ? from : p) + sents[j].length;
+        }
+        const sub = para.text.slice(from).trim();
+        if (sub) speakText = sub;
+      }
 
       // 绑定当前段落的逐词高亮
       const card = document.querySelector('#practice-list .practice-card[data-idx="' + this.activeIdx + '"]');
@@ -1375,7 +1402,7 @@
           card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         }
       }
-      if (SentTracker.attach(card, para.text)) {
+      if (SentTracker.attach(card, speakText, startSent)) {
         if (TTS.usesAudio()) SentTracker.trackAudio();
         else TTS.wordHook = function (ci) { SentTracker.highlightAtChar(ci); };
       }
@@ -1385,7 +1412,7 @@
       TTS.rate = para.rate;                    // 本段倍速
       if (TTS._audio) { try { TTS._audio.playbackRate = para.rate; } catch (e) { /* 忽略 */ } }
 
-      TTS._speak(para.text, function () {
+      TTS._speak(speakText, function () {
         TTS.rate = savedRate;                  // 还原全局倍速
         if (self.state !== 'playing' || token !== self._token) return;
         if (self.paras[self.activeIdx] && self.paras[self.activeIdx].loop) {
@@ -1458,23 +1485,6 @@
       updateParaUI();
     }
   };
-
-  /** 单句点读：停掉其他播放，只朗读点击的这一句并整句高亮；再点同一句 = 从头重读 */
-  let sentReadToken = 0;
-  function playSingleSentence(el) {
-    TTS.stop();
-    ParaPlayers.stop();
-    closeWordPop();
-
-    const token = ++sentReadToken;
-    $$('#practice-list .sentence.sentence-reading').forEach((s) => s.classList.remove('sentence-reading'));
-    el.classList.add('sentence-reading');
-
-    TTS._speak(el.textContent.trim(), () => {
-      if (token !== sentReadToken) return;
-      el.classList.remove('sentence-reading');
-    });
-  }
 
   /** 同步每段卡片上的 UI 状态（播放中高亮、循环点亮、按钮文字） */
   function updateParaUI() {
@@ -2628,12 +2638,18 @@
         return;
       }
 
-      // 3) 点到英文区域：点中某一句 -> 只读这一句；点段落空白处 -> 从头重读整段
+      // 3) 点到英文区域：点中某一句 -> 从这句开始接着读（蓝色起点标记）；点段落空白处 -> 从头重读整段
       const segEn = e.target.closest('.seg-en');
       if (segEn) {
         const sentEl = e.target.closest('.sentence');
         if (sentEl && segEn.contains(sentEl) && sentEl.textContent.trim()) {
-          playSingleSentence(sentEl);
+          closeWordPop();
+          const sibs = Array.from(card.querySelectorAll('.seg-text-en .sentence'));
+          const si = Math.max(0, sibs.indexOf(sentEl));
+          ParaPlayers.restartFrom(idx, si);
+          // 起点句打蓝色标记，和正常跟读的粉色高亮区分开
+          $$('#practice-list .sentence.sentence-start').forEach((s) => s.classList.remove('sentence-start'));
+          sentEl.classList.add('sentence-start');
         } else {
           closeWordPop();
           ParaPlayers.restart(idx);   // 点段落 = 从头重读（暂停/继续用卡片按钮）
@@ -2952,8 +2968,8 @@
 
     _tick() {
       if (this.userHold) return;
-      const el = document.querySelector('#practice-list .sentence.sactive')
-              || document.querySelector('#practice-list .para-card.pactive');
+      const el = document.querySelector('#practice-list .sentence.sentence-reading')
+              || document.querySelector('#practice-list .practice-card.is-active');
       if (!el) { this._target = null; return; }
       if (el === this._target && this._inView(el)) return;   // 已在可视区，不动
       this._target = el;
