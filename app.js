@@ -2573,15 +2573,25 @@
               toast('「' + label + '」装载失败：' + (window.PiperTTS.error || '未知错误'), 'err', 4500);
               return;
             }
-            // 装载完成：从原位置接着读（逐段优先于整篇）
+            // 装载完成：自动接着读（逐段优先于整篇；之前没在播也自动开播）
             if (paraWasActive && paraIndex >= 0) {
               toast('已切换为「' + label + '」，接着读', 'ok', 2200);
-              ParaPlayers.play(paraIndex);
+              ParaPlayers.restart(paraIndex);
             } else if (ttsWasActive && ttsIndex >= 0) {
               toast('已切换为「' + label + '」，接着读', 'ok', 2200);
               TTS.playFrom(ttsIndex);
+            } else if (ParaPlayers.paras && ParaPlayers.paras.length) {
+              // 之前没在播：装载完成后自动从第一段开始读，立刻听到新声音
+              toast('已切换为「' + label + '」，自动开始朗读', 'ok', 2200);
+              ParaPlayers.restart(0);
             } else {
-              toast('「' + label + '」已就绪，点击播放即可', 'ok', 3200);
+              // 还没有练习内容：合成一句试听新声音
+              toast('已切换为「' + label + '」，正在试听…', 'ok', 2200);
+              synthesizeOffline('Hello! This is your new voice. How do I sound?').then((url) => {
+                const a = new Audio(url);
+                a.playbackRate = TTS.rate;
+                a.play().catch(() => {});
+              }).catch(() => {});
             }
           });
         }
