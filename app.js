@@ -1450,6 +1450,31 @@
     }
   };
 
+  /** 单句点读：停掉其他播放，只朗读点击的这一句并整句高亮；再点同一句 = 停止 */
+  let sentReadToken = 0;
+  function playSingleSentence(el) {
+    // 再点正在读的那一句 -> 停止
+    if (el.classList.contains('sentence-reading')) {
+      sentReadToken++;
+      el.classList.remove('sentence-reading');
+      TTS.stop();
+      return;
+    }
+
+    TTS.stop();
+    ParaPlayers.stop();
+    closeWordPop();
+
+    const token = ++sentReadToken;
+    $$('#practice-list .sentence.sentence-reading').forEach((s) => s.classList.remove('sentence-reading'));
+    el.classList.add('sentence-reading');
+
+    TTS._speak(el.textContent.trim(), () => {
+      if (token !== sentReadToken) return;
+      el.classList.remove('sentence-reading');
+    });
+  }
+
   /** 同步每段卡片上的 UI 状态（播放中高亮、循环点亮、按钮文字） */
   function updateParaUI() {
     $$('#practice-list .practice-card').forEach((card) => {
@@ -2592,10 +2617,16 @@
         return;
       }
 
-      // 3) 点到英文区域 -> 播放这一段
-      if (e.target.closest('.seg-en')) {
-        closeWordPop();
-        ParaPlayers.play(idx);
+      // 3) 点到英文区域：点中某一句 -> 只读这一句；点段落空白处 -> 读整段
+      const segEn = e.target.closest('.seg-en');
+      if (segEn) {
+        const sentEl = e.target.closest('.sentence');
+        if (sentEl && segEn.contains(sentEl) && sentEl.textContent.trim()) {
+          playSingleSentence(sentEl);
+        } else {
+          closeWordPop();
+          ParaPlayers.play(idx);
+        }
       }
     });
     // 每段倍速滑条：拖动实时生效（input 事件，松手即调好）

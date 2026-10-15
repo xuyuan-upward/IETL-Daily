@@ -566,6 +566,13 @@ select:focus { border-color: var(--pink); box-shadow: 0 0 0 3px var(--pink-ring)
   margin: 0 -4px;
   transition: background-color .22s ease, box-shadow .22s ease;
 }
+/* 句子可点读：指针 + 悬停淡紫 */
+.seg-text-en .sentence { cursor: pointer; }
+.seg-text-en .sentence:hover {
+  background: rgba(99, 102, 241, .10);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, .06);
+}
+.practice-tip { margin: 6px 0 0; }
 .sentence-read {
   background: rgba(232, 67, 147, .07);
 }
