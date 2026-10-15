@@ -26,11 +26,21 @@ import { TtsSession } from './vendor/piper-tts-web/piper-tts-web.js';
 const HF_BASE = 'https://huggingface.co/diffusionstudio/piper-voices/resolve/main/';
 
 const VOICES = [
-  { id: 'en_GB-cori-medium',  label: '英音 · 女声 Cori',   accent: 'GB', gender: 'F', hfPath: 'en/en_GB/cori/medium/' },
-  { id: 'en_GB-alan-medium',  label: '英音 · 男声 Alan',   accent: 'GB', gender: 'M', hfPath: 'en/en_GB/alan/medium/' },
-  { id: 'en_US-amy-medium',   label: '美音 · 女声 Amy',    accent: 'US', gender: 'F', hfPath: 'en/en_US/amy/medium/' },
-  { id: 'en_US-lessac-medium', label: '美音 · 男声 Lessac', accent: 'US', gender: 'M', hfPath: 'en/en_US/lessac/medium/' }
+  { id: 'en_GB-cori-medium',  label: '英音 · 女声 Cori',   accent: 'GB', gender: 'F', hfPath: 'en/en_GB/cori/medium/', onnxBytes: 63531379 },
+  { id: 'en_GB-alan-medium',  label: '英音 · 男声 Alan',   accent: 'GB', gender: 'M', hfPath: 'en/en_GB/alan/medium/', onnxBytes: 63201294 },
+  { id: 'en_US-amy-medium',   label: '美音 · 女声 Amy',    accent: 'US', gender: 'F', hfPath: 'en/en_US/amy/medium/', onnxBytes: 63201294 },
+  { id: 'en_US-lessac-medium', label: '美音 · 男声 Lessac', accent: 'US', gender: 'M', hfPath: 'en/en_US/lessac/medium/', onnxBytes: 63201294 }
 ];
+
+/* 已知模型体积（onnxBytes）：服务器不下发 Content-Length 时用它兜底算百分比 */
+
+function fmtMb(n) { return (n / 1048576).toFixed(1); }
+
+/** 统一的装载进度文案：百分比放最前，手机上不被省略号截掉 */
+function loadingText(action, label, loaded, total) {
+  const pct = Math.min(99, Math.max(0, Math.round(loaded / total * 100)));
+  return action + ' ' + pct + '%（' + fmtMb(loaded) + '/' + fmtMb(total) + ' MB）· ' + label;
+}
 
 const VOICE_STORE_KEY = 'ielts_piper_voice';
 const DEFAULT_VOICE_ID = 'en_GB-cori-medium';
@@ -130,10 +140,11 @@ async function ensureOpfs(voice, onProgress) {
 
   await copyToOpfs(dir, voice.id + '.onnx.json', localConfigUrl(voice));
   await copyToOpfs(dir, voice.id + '.onnx', localModelUrl(voice), (loaded, total) => {
-    progressText = total
-      ? '正在装载语音包「' + voice.label + '」' + Math.round(loaded / total * 100) + '%'
-      : '正在装载语音包「' + voice.label + '」…';
-    if (onProgress) onProgress(loaded, total);
+    const t = total || voice.onnxBytes || 0;
+    progressText = t
+      ? loadingText('下载语音包', voice.label, loaded, t)
+      : '下载语音包 · ' + voice.label + ' · 已下载 ' + fmtMb(loaded) + ' MB…';
+    if (onProgress) onProgress(loaded, t);
   });
 }
 
@@ -151,10 +162,19 @@ function createSession(voice, onProgress) {
     },
     progress: (p) => {
       if (p && p.url && p.url.indexOf('tts://') === 0) {
-        progressText = '正在合成语音 ' + (p.loaded + 1) + '/' + p.total + '…';
-      } else if (p && p.total) {
-        progressText = '正在装载语音包「' + voice.label + '」' + Math.round(p.loaded / p.total * 100) + '%';
-        if (onProgress) onProgress(p.loaded, p.total);
+        // 分块合成阶段：显示块序号 + 百分比
+        const pct = p.total ? Math.min(99, Math.round((p.loaded + 1) / p.total * 100)) : 0;
+        progressText = '合成语音 ' + (p.loaded + 1) + '/' + p.total + (pct ? ' · ' + pct + '%' : '') + '…';
+        if (onProgress) onProgress(p.loaded + 1, p.total || 0);
+      } else if (p && typeof p.loaded === 'number') {
+        // 引擎/模型载入阶段：优先用库给的 total，缺失时用已知模型体积兜底
+        const total = p.total || voice.onnxBytes || 0;
+        if (total) {
+          progressText = loadingText('载入引擎', voice.label, Math.min(p.loaded, total), total);
+          if (onProgress) onProgress(p.loaded, total);
+        } else {
+          progressText = '载入引擎 · ' + voice.label + ' · 已读取 ' + fmtMb(p.loaded) + ' MB…';
+        }
       }
     },
     logger: (msg) => console.log('[piper]', msg)
@@ -179,7 +199,7 @@ function init(onProgress) {
   const voice = currentVoice();
   status = 'loading';
   lastError = '';
-  progressText = '正在装载语音包「' + voice.label + '」…';
+  progressText = '准备装载语音包 · ' + voice.label + '…';
 
   sessionPromiseVoiceId = voice.id;
   sessionPromise = ensureOpfs(voice, onProgress)
@@ -319,7 +339,8 @@ async function synthesizeWithPauses(session, text, onProgress) {
 
   const buffers = [];
   for (let i = 0; i < groups.length; i++) {
-    progressText = '正在合成语音 ' + (i + 1) + '/' + groups.length + '（句群停顿）…';
+    progressText = '合成语音 ' + (i + 1) + '/' + groups.length + ' · ' +
+                   Math.min(99, Math.round((i + 1) / groups.length * 100)) + '%（句群停顿）';
     if (onProgress) onProgress(i + 1, groups.length);
     const blob = await session.predict(groups[i].text);
     if (!blob || !blob.size) throw new Error('离线合成返回了空音频');
