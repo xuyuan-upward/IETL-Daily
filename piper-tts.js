@@ -19,23 +19,47 @@
 
 import { TtsSession } from './vendor/piper-tts-web/piper-tts-web.js';
 
-const VOICE_ID = 'en_GB-cori-medium';
-const VOICE_LABEL = '离线英音 · Cori (en-GB)';
+/* ------------------------------------------------------------
+   内置离线语音包清单（模型文件在 voices/ 目录，随项目自托管）
+   hfPath 仅作为 piper-tts-web 的 OPFS 缓存键前缀，不会真的联网
+   ------------------------------------------------------------ */
+const HF_BASE = 'https://huggingface.co/diffusionstudio/piper-voices/resolve/main/';
 
-/* 这些 HF 地址只作为 OPFS 缓存键使用，不会真的发起请求 */
-const HF_PREFIX = 'https://huggingface.co/diffusionstudio/piper-voices/resolve/main/en/en_GB/cori/medium/';
+const VOICES = [
+  { id: 'en_GB-cori-medium',  label: '英音 · 女声 Cori',   accent: 'GB', gender: 'F', hfPath: 'en/en_GB/cori/medium/' },
+  { id: 'en_GB-alan-medium',  label: '英音 · 男声 Alan',   accent: 'GB', gender: 'M', hfPath: 'en/en_GB/alan/medium/' },
+  { id: 'en_US-amy-medium',   label: '美音 · 女声 Amy',    accent: 'US', gender: 'F', hfPath: 'en/en_US/amy/medium/' },
+  { id: 'en_US-lessac-medium', label: '美音 · 男声 Lessac', accent: 'US', gender: 'M', hfPath: 'en/en_US/lessac/medium/' }
+];
+
+const VOICE_STORE_KEY = 'ielts_piper_voice';
+const DEFAULT_VOICE_ID = 'en_GB-cori-medium';
+
+function loadVoiceId() {
+  let saved = '';
+  try { saved = localStorage.getItem(VOICE_STORE_KEY) || ''; } catch (e) { /* 忽略 */ }
+  return VOICES.some((v) => v.id === saved) ? saved : DEFAULT_VOICE_ID;
+}
+
+let currentVoiceId = loadVoiceId();
+
+function currentVoice() {
+  return VOICES.find((v) => v.id === currentVoiceId) || VOICES[0];
+}
 
 const BASE = new URL('./', import.meta.url);
-const LOCAL_MODEL = new URL('voices/' + VOICE_ID + '.onnx', BASE);
-const LOCAL_CONFIG = new URL('voices/' + VOICE_ID + '.onnx.json', BASE);
 const ONNX_DIR = new URL('vendor/onnxruntime-web/', BASE);
 const PIPER_WASM = new URL('vendor/piper-wasm/piper_phonemize.wasm', BASE);
 const PIPER_DATA = new URL('vendor/piper-wasm/piper_phonemize.data', BASE);
 
+function localModelUrl(voice) { return new URL('voices/' + voice.id + '.onnx', BASE); }
+function localConfigUrl(voice) { return new URL('voices/' + voice.id + '.onnx.json', BASE); }
+
 const AUDIO_CACHE_LIMIT = 40;
 
-const audioCache = new Map();   // text -> objectURL
+const audioCache = new Map();   // (voiceId|text) -> objectURL
 let session = null;
+let sessionVoiceId = '';        // session 当前装载的语音包
 let sessionPromise = null;
 let status = 'idle';            // idle | loading | ready | error
 let lastError = '';
@@ -99,15 +123,15 @@ async function copyToOpfs(dir, cacheKey, sourceUrl, reportProgress) {
   return blob.size;
 }
 
-async function ensureOpfs(onProgress) {
+async function ensureOpfs(voice, onProgress) {
   const root = await navigator.storage.getDirectory();
   const dir = await root.getDirectoryHandle('piper', { create: true });
 
-  await copyToOpfs(dir, VOICE_ID + '.onnx.json', LOCAL_CONFIG);
-  await copyToOpfs(dir, VOICE_ID + '.onnx', LOCAL_MODEL, (loaded, total) => {
+  await copyToOpfs(dir, voice.id + '.onnx.json', localConfigUrl(voice));
+  await copyToOpfs(dir, voice.id + '.onnx', localModelUrl(voice), (loaded, total) => {
     progressText = total
-      ? '正在装载离线语音包 ' + Math.round(loaded / total * 100) + '%'
-      : '正在装载离线语音包…';
+      ? '正在装载语音包「' + voice.label + '」' + Math.round(loaded / total * 100) + '%'
+      : '正在装载语音包「' + voice.label + '」…';
     if (onProgress) onProgress(loaded, total);
   });
 }
@@ -116,9 +140,9 @@ async function ensureOpfs(onProgress) {
    会话
    ------------------------------------------------------------ */
 
-function createSession(onProgress) {
+function createSession(voice, onProgress) {
   return TtsSession.create({
-    voiceId: VOICE_ID,
+    voiceId: voice.id,
     wasmPaths: {
       onnxWasm: ONNX_DIR.href,       // 目录，末尾带 /
       piperWasm: PIPER_WASM.href,    // 完整文件地址
@@ -128,7 +152,7 @@ function createSession(onProgress) {
       if (p && p.url && p.url.indexOf('tts://') === 0) {
         progressText = '正在合成语音 ' + (p.loaded + 1) + '/' + p.total + '…';
       } else if (p && p.total) {
-        progressText = '正在装载离线语音包 ' + Math.round(p.loaded / p.total * 100) + '%';
+        progressText = '正在装载语音包「' + voice.label + '」' + Math.round(p.loaded / p.total * 100) + '%';
         if (onProgress) onProgress(p.loaded, p.total);
       }
     },
@@ -136,24 +160,26 @@ function createSession(onProgress) {
   });
 }
 
-/** 确保引擎就绪（首次调用会装载模型，之后直接复用） */
+/** 确保引擎就绪（首次调用或切换语音后会装载模型，之后直接复用） */
 function init(onProgress) {
   if (unsupportedReason) {
     status = 'error';
     lastError = unsupportedReason;
     return Promise.reject(new Error(unsupportedReason));
   }
-  if (session) return Promise.resolve(session);
+  if (session && sessionVoiceId === currentVoiceId) return Promise.resolve(session);
   if (sessionPromise) return sessionPromise;
 
+  const voice = currentVoice();
   status = 'loading';
   lastError = '';
-  progressText = '正在装载离线语音包…';
+  progressText = '正在装载语音包「' + voice.label + '」…';
 
-  sessionPromise = ensureOpfs(onProgress)
-    .then(() => createSession(onProgress))
+  sessionPromise = ensureOpfs(voice, onProgress)
+    .then(() => createSession(voice, onProgress))
     .then((s) => {
       session = s;
+      sessionVoiceId = voice.id;
       status = 'ready';
       progressText = '';
       return s;
@@ -312,10 +338,10 @@ async function doSpeak(key, onProgress) {
   return url;
 }
 
-/** 合成一段文本，返回可直接播放的 objectURL（带缓存 + 串行队列） */
+/** 合成一段文本，返回可直接播放的 objectURL（缓存键含语音包，切换语音不会串音） */
 function speak(text, onProgress) {
-  const key = String(text || '').trim();
-  if (!key) return Promise.reject(new Error('没有可朗读的文本'));
+  const key = currentVoiceId + '|' + String(text || '').trim();
+  if (key === currentVoiceId + '|') return Promise.reject(new Error('没有可朗读的文本'));
   if (audioCache.has(key)) return Promise.resolve(audioCache.get(key));
 
   const p = speakQueue.then(() => {
@@ -332,8 +358,23 @@ function speak(text, onProgress) {
    ------------------------------------------------------------ */
 
 window.PiperTTS = {
-  voiceId: VOICE_ID,
-  voiceLabel: VOICE_LABEL,
+  /** 全部内置语音包：[{ id, label, accent, gender }] */
+  voices: VOICES.map((v) => ({ id: v.id, label: v.label, accent: v.accent, gender: v.gender })),
+
+  get voiceId() { return currentVoiceId; },
+  get voiceLabel() { return currentVoice().label; },
+
+  /** 切换语音包：下次合成时自动装载对应模型（已合成的缓存不串音） */
+  setVoice(id) {
+    if (!VOICES.some((v) => v.id === id) || id === currentVoiceId) return false;
+    currentVoiceId = id;
+    try { localStorage.setItem(VOICE_STORE_KEY, id); } catch (e) { /* 忽略 */ }
+    // 旧会话作废，下次 speak/init 时装载新语音包
+    session = null;
+    sessionVoiceId = '';
+    status = 'idle';
+    return true;
+  },
 
   /** 环境是否具备离线合成能力（与开关设置无关） */
   supported: !unsupportedReason,
@@ -351,7 +392,7 @@ window.PiperTTS = {
 
   speak: speak,
 
-  isCached(text) { return audioCache.has(String(text || '').trim()); }
+  isCached(text) { return audioCache.has(currentVoiceId + '|' + String(text || '').trim()); }
 };
 
 window.dispatchEvent(new CustomEvent('pipertts:ready'));

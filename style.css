@@ -397,6 +397,32 @@ select:focus { border-color: var(--pink); box-shadow: 0 0 0 3px var(--pink-ring)
 
 .voice-select { max-width: 240px; }
 
+/* 倍速滑条（全文 + 每段） */
+.rate-slider {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: var(--bg-2);
+  border-radius: 999px;
+}
+.rate-slider input[type="range"] {
+  width: 96px;
+  accent-color: var(--pink);
+  cursor: pointer;
+}
+.rate-slider .rate-icon { font-size: 12px; opacity: .7; }
+.rate-slider .rate-val {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  min-width: 46px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.para-rate-slider { padding: 2px 8px; }
+.para-rate-slider input[type="range"] { width: 84px; }
+
 .play-progress { min-width: 70px; text-align: right; }
 
 #practice-list {

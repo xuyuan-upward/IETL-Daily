@@ -79,15 +79,12 @@ if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
             <input type="checkbox" id="loop-all">
             <span>循环全文</span>
           </label>
-          <select id="rate-all" class="voice-select rate-all" title="全文播放倍速">
-            <option value="0.5">0.5×</option>
-            <option value="0.75">0.75×</option>
-            <option value="1" selected>1×</option>
-            <option value="1.25">1.25×</option>
-            <option value="1.5">1.5×</option>
-            <option value="1.75">1.75×</option>
-            <option value="2">2×</option>
-          </select>
+          <span class="rate-slider" title="全文播放倍速（拖动实时生效，同步所有段落）">
+            <span class="rate-icon">🐢</span>
+            <input type="range" id="rate-all" min="0.5" max="2" step="0.05" value="1">
+            <span class="rate-icon">🐇</span>
+            <b class="rate-val" id="rate-all-val">1.00×</b>
+          </span>
           <select id="voice-select" class="voice-select" title="选择英音发音人"></select>
           <span class="hint play-progress" id="play-progress"></span>
         </div>
@@ -206,17 +203,18 @@ if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
           <input type="text" id="set-model" class="input" placeholder="gpt-4o-mini / deepseek-chat / qwen-plus">
         </label>
 
-        <div class="divider">离线英音朗读（内置语音包，无需联网、无需 API Key）</div>
+        <div class="divider">离线朗读语音包（内置英美音 × 男女声，无需联网、无需 API Key）</div>
 
         <label class="field field-check">
           <input type="checkbox" id="set-offline-tts" checked>
-          <span class="field-label">启用内置离线英音（en-GB · Piper）</span>
+          <span class="field-label">启用内置离线语音包（Piper · 英音/美音 · 男声/女声）</span>
         </label>
         <p class="hint">
-          语音包已随项目一起下载（<code>voices/</code> + <code>vendor/</code>），
+          内置 4 个语音包：英音女声 Cori、英音男声 Alan、美音女声 Amy、美音男声 Lessac，
+          已随项目一起下载（<code>voices/</code> + <code>vendor/</code>），
           在浏览器本地完成合成，<b>运行时不访问任何外部服务</b>。
-          首次朗读需要装载约 63MB 模型，之后会缓存在浏览器 OPFS 中，秒开。
-          勾选后优先级高于云端 TTS 与系统语音。
+          每个语音包首次朗读需装载约 60MB 模型，之后缓存在浏览器 OPFS 中，秒开。
+          发音人在练习区右上角下拉框切换。勾选后优先级高于云端 TTS 与系统语音。
         </p>
         <p class="hint" id="offline-tts-status"></p>
         <div class="form-actions">
@@ -255,7 +253,7 @@ if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
         朗读支持三种引擎，按「离线 → 云端 → 系统」自动择优，也可在上方手动关闭：
       </p>
       <ul class="bullet-list">
-        <li><b>📦 内置离线英音（推荐）</b>：随项目自带的 Piper en-GB 神经语音包，在浏览器内本地合成，<b>完全离线、不消耗流量、无需 API Key</b>，音质接近真人。首次使用需装载约 63MB 模型（之后缓存在浏览器里）。</li>
+        <li><b>📦 内置离线语音包（推荐）</b>：随项目自带的 Piper 神经语音包（英音/美音 × 男声/女声 共 4 个），在浏览器内本地合成，<b>完全离线、不消耗流量、无需 API Key</b>，音质接近真人。每个语音包首次使用需装载约 60MB 模型（之后缓存在浏览器里）。</li>
         <li><b>☁️ 云端英音</b>：填入 TTS 模型名 + API Key 即可，音质稳定、不受系统语音包限制，朗读失败会自动回退。</li>
         <li><b>💻 浏览器系统语音</b>：使用 Web Speech API，完全本地、无需 Key，音质取决于系统语音包：
           <ul class="bullet-list">

@@ -1072,8 +1072,6 @@
      一方开始时会把另一方停掉。
      ========================================================== */
 
-  const PARA_RATES = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
-
   /* ==========================================================
      逐句流式高亮（跟读卡拉 OK 效果）
      - 离线 / 云端（合成音频）：没有句边界事件，按「句子字符权重」
@@ -1534,15 +1532,18 @@
     sel.innerHTML = '';
     const hint = $('#engine-hint');
 
-    // 内置离线语音包：显示当前使用的本地发音人，不依赖系统语音包与网络
+    // 内置离线语音包：列出全部本地发音人（英/美音 × 男/女声），可直接切换
     if (TTS.isLocal()) {
-      const opt = document.createElement('option');
-      opt.value = '__local__';
-      opt.textContent = '📦 ' + (window.PiperTTS.voiceLabel || '离线英音 (en-GB)');
-      sel.appendChild(opt);
-      sel.value = '__local__';
-      sel.disabled = true;   // 离线语音包在「设置」页开关
-      if (hint) hint.innerHTML = '当前发音引擎：📦 <b>内置离线语音包 · Cori（en-GB 标准英式发音）</b>✓ 完全离线';
+      const p = window.PiperTTS;
+      (p.voices || []).forEach((v) => {
+        const opt = document.createElement('option');
+        opt.value = '__local__:' + v.id;
+        opt.textContent = '📦 ' + v.label;
+        sel.appendChild(opt);
+      });
+      sel.value = '__local__:' + p.voiceId;
+      sel.disabled = false;
+      if (hint) hint.innerHTML = '当前发音引擎：📦 <b>内置离线语音包 · ' + p.voiceLabel + '</b> ✓ 完全离线，可自由切换发音人';
       return;
     }
 
@@ -1725,19 +1726,24 @@
       btnLoop.innerHTML = '🔁 循环';
       controls.appendChild(btnLoop);
 
-      const rateSel = document.createElement('select');
-      rateSel.className = 'para-rate';
-      rateSel.dataset.action = 'rate';
-      rateSel.title = '本段倍速';
+      // 本段倍速滑条：拖动实时生效
       const curRate = (ParaPlayers.paras[i] && ParaPlayers.paras[i].rate) || 1;
-      PARA_RATES.forEach((r) => {
-        const opt = document.createElement('option');
-        opt.value = String(r);
-        opt.textContent = r + '×';
-        if (Math.abs(curRate - r) < 0.001) opt.selected = true;
-        rateSel.appendChild(opt);
-      });
-      controls.appendChild(rateSel);
+      const rateWrap = document.createElement('span');
+      rateWrap.className = 'rate-slider para-rate-slider';
+      rateWrap.title = '本段倍速（拖动实时生效）';
+      const rateInput = document.createElement('input');
+      rateInput.type = 'range';
+      rateInput.className = 'para-rate';
+      rateInput.min = '0.5';
+      rateInput.max = '2';
+      rateInput.step = '0.05';
+      rateInput.value = String(curRate);
+      const rateVal = document.createElement('b');
+      rateVal.className = 'rate-val';
+      rateVal.textContent = curRate.toFixed(2) + '×';
+      rateWrap.appendChild(rateInput);
+      rateWrap.appendChild(rateVal);
+      controls.appendChild(rateWrap);
 
       card.appendChild(controls);
       list.appendChild(card);
@@ -2296,18 +2302,33 @@
     $('#btn-stop-all').addEventListener('click', () => { TTS.stop(); ParaPlayers.stop(); });
     $('#loop-all').addEventListener('change', (e) => { TTS.loop = e.target.checked; });
 
-    // 全文倍速：一键调整所有段落的倍速，正在播放的音频实时变速
-    $('#rate-all').addEventListener('change', (e) => {
+    // 全文倍速滑条：拖动实时生效，同步所有段落的滑条与倍速
+    $('#rate-all').addEventListener('input', (e) => {
       const r = parseFloat(e.target.value);
       if (!isFinite(r)) return;
+      const label = r.toFixed(2) + '×';
+      const allVal = $('#rate-all-val');
+      if (allVal) allVal.textContent = label;
       TTS.setRate(r);
       ParaPlayers.paras.forEach((p) => { p.rate = r; });
-      $$('#practice-list .para-rate').forEach((sel) => { sel.value = String(r); });
-      toast('全文倍速已调整为 ' + r + '×', 'ok', 1600);
+      $$('#practice-list .para-rate').forEach((sl) => {
+        sl.value = String(r);
+        const lab = sl.parentElement && sl.parentElement.querySelector('.rate-val');
+        if (lab) lab.textContent = label;
+      });
     });
 
     $('#voice-select').addEventListener('change', (e) => {
-      TTS.setVoice(e.target.value);
+      const val = e.target.value;
+      // 内置离线语音包：走 PiperTTS 切换（与系统语音的 voiceURI 区分开）
+      if (val.indexOf('__local__:') === 0 && window.PiperTTS) {
+        if (window.PiperTTS.setVoice(val.slice('__local__:'.length))) {
+          toast('发音人切换为：' + window.PiperTTS.voiceLabel + '（首次播放需装载模型，稍候片刻）', 'ok', 2600);
+          renderVoiceSelect();
+        }
+        return;
+      }
+      TTS.setVoice(val);
       if (TTS.state === 'playing') TTS.playFrom(TTS.index);
       toast('发音人：' + (TTS.voice ? TTS.voice.name : '未选择'));
     });
@@ -2344,12 +2365,17 @@
         ParaPlayers.play(idx);
       }
     });
-    pl.addEventListener('change', (e) => {
-      const sel = e.target.closest('select[data-action="rate"]');
-      if (!sel) return;
+    // 每段倍速滑条：拖动实时生效（input 事件，松手即调好）
+    pl.addEventListener('input', (e) => {
+      const sl = e.target.closest('input.para-rate');
+      if (!sl) return;
       const card = e.target.closest('.practice-card');
       if (!card) return;
-      ParaPlayers.setRate(Number(card.dataset.idx), parseFloat(sel.value));
+      const r = parseFloat(sl.value);
+      if (!isFinite(r)) return;
+      const lab = sl.parentElement && sl.parentElement.querySelector('.rate-val');
+      if (lab) lab.textContent = r.toFixed(2) + '×';
+      ParaPlayers.setRate(Number(card.dataset.idx), r);
     });
 
     // 重点口语句块表格：点击行朗读例句（没有例句则读句块本身）
@@ -2443,7 +2469,7 @@
         ? '翻译用 LLM（' + s.model + '），口语表达更地道'
         : '翻译用免费接口（未填完整 LLM 配置）');
       parts.push(TTS.isLocal()
-        ? '朗读用内置离线英音（en-GB）'
+        ? '朗读用内置离线语音包（' + window.PiperTTS.voiceLabel + '）'
         : (cloudTtsReady(s)
           ? '朗读用云端英音（' + s.ttsVoice + ' / ' + s.ttsModel + '）'
           : '朗读用浏览器系统语音'));
@@ -2537,7 +2563,7 @@
         const a = new Audio(url);
         a.playbackRate = TTS.rate;
         a.play().catch(() => {});
-        toast('离线英音语音包可用，正在试听', 'ok');
+        toast('离线语音包（' + window.PiperTTS.voiceLabel + '）可用，正在试听', 'ok');
       } catch (e) {
         toast('试听失败：' + (e && e.message ? e.message : e), 'err', 5000);
       }
