@@ -2464,19 +2464,38 @@
       // 内置离线语音包：走 PiperTTS 切换（与系统语音的 voiceURI 区分开）
       if (val.indexOf('__local__:') === 0 && window.PiperTTS) {
         if (window.PiperTTS.setVoice(val.slice('__local__:'.length))) {
-          // 立即停掉旧发音人的播放与预取，避免继续听到旧声音
+          // 记住此刻的播放位置：装载完成后用新语音从原处接着读
+          const ttsWasActive = TTS.state === 'playing' || TTS.state === 'paused';
+          const ttsIndex = TTS.index;
+          const paraWasActive = ParaPlayers.state === 'playing' || ParaPlayers.state === 'paused';
+          const paraIndex = ParaPlayers.activeIdx;
+
+          // 立即暂停旧语音（预取一并作废），等新语音包装载
           TTS.stop();
           ParaPlayers.stop();
           renderVoiceSelect();
 
-          // 马上预载新语音包：装载期间点播放会自动排队等待，完成后提示就绪
           const label = window.PiperTTS.voiceLabel;
-          toast('正在装载「' + label + '」语音包，完成后会提示…', 'info', 2600);
+          const willResume = (paraWasActive && paraIndex >= 0) || (ttsWasActive && ttsIndex >= 0);
+          toast('正在装载「' + label + '」语音包' + (willResume ? '，完成后接着读…' : '…'), 'info', 2600);
+
           window.PiperTTS.warmup(showTtsProgress).then((ok) => {
             renderVoiceSelect();
             scheduleHideTtsProgress(ok ? 1200 : 3000);
-            if (ok) toast('「' + label + '」已就绪，点击播放即可', 'ok', 3200);
-            else toast('「' + label + '」装载失败：' + (window.PiperTTS.error || '未知错误'), 'err', 4500);
+            if (!ok) {
+              toast('「' + label + '」装载失败：' + (window.PiperTTS.error || '未知错误'), 'err', 4500);
+              return;
+            }
+            // 装载完成：从原位置接着读（逐段优先于整篇）
+            if (paraWasActive && paraIndex >= 0) {
+              toast('已切换为「' + label + '」，接着读', 'ok', 2200);
+              ParaPlayers.play(paraIndex);
+            } else if (ttsWasActive && ttsIndex >= 0) {
+              toast('已切换为「' + label + '」，接着读', 'ok', 2200);
+              TTS.playFrom(ttsIndex);
+            } else {
+              toast('「' + label + '」已就绪，点击播放即可', 'ok', 3200);
+            }
           });
         }
         return;
