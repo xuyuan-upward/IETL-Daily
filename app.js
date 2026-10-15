@@ -385,14 +385,14 @@
 
   /** 带超时的 fetch：避免某个接口不可达时一直「翻译中…」卡死 */
   async function fetchWithTimeout(url, options, ms) {
-    const timeout = typeof ms === 'number' ? ms : 8000;
+    const timeout = typeof ms === 'number' ? ms : 15000;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeout);
     try {
       return await fetch(url, Object.assign({}, options, { signal: controller.signal }));
     } catch (e) {
       if (e && e.name === 'AbortError') {
-        throw new Error('请求超时（' + timeout + 'ms），接口不可达');
+        throw new Error('请求超时（' + Math.round(timeout / 1000) + ' 秒），请检查网络后重试');
       }
       throw e;
     } finally {
@@ -429,11 +429,11 @@
     return content.trim();
   }
 
-  /** 免费接口一：Google 翻译 gtx（部分网络不可达，故加超时） */
+  /** 免费接口一：Google 翻译 gtx（国内通常不可达，短超时快速失败兜底） */
   async function googleTranslate(text) {
     const url = 'https://translate.googleapis.com/translate_a/single' +
                 '?client=gtx&sl=zh-CN&tl=en&dt=t&q=' + encodeURIComponent(text);
-    const resp = await fetchWithTimeout(url, null, 6000);
+    const resp = await fetchWithTimeout(url, null, 5000);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     if (!Array.isArray(data) || !Array.isArray(data[0])) throw new Error('响应格式异常');
@@ -446,13 +446,41 @@
   async function myMemoryTranslate(text) {
     const url = 'https://api.mymemory.translated.net/get?langpair=' +
                 encodeURIComponent('zh-CN|en') + '&q=' + encodeURIComponent(text);
-    const resp = await fetchWithTimeout(url, null, 8000);
+    const resp = await fetchWithTimeout(url, null, 15000);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     const raw = data && data.responseData && data.responseData.translatedText;
     if (!raw) throw new Error('译文为空');
     if (/MYMEMORY WARNING|INVALID|QUERY LENGTH/i.test(raw)) throw new Error(raw);
     return decodeEntities(raw);
+  }
+
+  /** 免费接口三：微软 Edge 翻译（国内可达性好，先取临时令牌，10 分钟内复用） */
+  let edgeAuthToken = '';
+  let edgeAuthAt = 0;
+  async function edgeTranslate(text) {
+    if (!edgeAuthToken || Date.now() - edgeAuthAt > 9 * 60 * 1000) {
+      const authResp = await fetchWithTimeout('https://edge.microsoft.com/translate/auth', null, 8000);
+      if (!authResp.ok) throw new Error('令牌获取失败 HTTP ' + authResp.status);
+      edgeAuthToken = (await authResp.text()).trim();
+      edgeAuthAt = Date.now();
+    }
+    const resp = await fetchWithTimeout(
+      'https://api-edge.cognitive.microsofttranslator.com/translate?from=zh-Hans&to=en&api-version=3.0',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + edgeAuthToken
+        },
+        body: JSON.stringify([{ Text: text }])
+      }, 15000);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const out = data && data[0] && data[0].translations &&
+                data[0].translations[0] && data[0].translations[0].text;
+    if (!out) throw new Error('译文为空');
+    return String(out);
   }
 
   /** 并发受限地并行处理数组，保持结果顺序（用于加速多分块翻译） */
@@ -470,33 +498,45 @@
     return results;
   }
 
-  /** 免费翻译（自动分块 + 双接口回退）
-   *  各分块并行请求（最多 4 路），每块先试 MyMemory（探测可达），失败再试 Google gtx。 */
-  async function freeTranslate(zh) {
+  /** 免费翻译（自动分块 + 三接口回退）
+   *  各分块并行请求（最多 3 路），每块依次尝试 MyMemory → 微软 Edge → Google gtx，
+   *  全部失败时聚合各接口的真实错误，便于定位是网络问题还是配额问题。 */
+  async function freeTranslate(zh, onProgress) {
     const chunks = chunkText(zh, 400);
-    const used = { google: false, myMemory: false };
+    const used = { myMemory: false, edge: false, google: false };
+    let done = 0;
 
-    const results = await mapWithConcurrency(chunks, 4, async (c) => {
+    const results = await mapWithConcurrency(chunks, 3, async (c) => {
+      const attempts = [
+        { label: 'MyMemory', fn: () => myMemoryTranslate(c), key: 'myMemory' },
+        { label: '微软 Edge', fn: () => edgeTranslate(c), key: 'edge' },
+        { label: 'Google', fn: () => googleTranslate(c), key: 'google' }
+      ];
+
       let text = null;
-      let lastErr = null;
-
-      // 首选 MyMemory
-      try { text = await myMemoryTranslate(c); used.myMemory = true; }
-      catch (e) { lastErr = e; }
-
-      // 回退 Google
-      if (!text) {
-        try { text = await googleTranslate(c); used.google = true; }
-        catch (e2) { lastErr = e2; }
+      const errs = [];
+      for (let i = 0; i < attempts.length; i++) {
+        try {
+          text = await attempts[i].fn();
+          used[attempts[i].key] = true;
+          break;
+        } catch (e) {
+          errs.push(attempts[i].label + ' ' + (e && e.message ? e.message : e));
+        }
       }
 
-      if (!text) throw lastErr || new Error('翻译失败');
+      done++;
+      if (onProgress) onProgress(done, chunks.length);
+
+      if (!text) throw new Error(errs.join('；') || '翻译失败');
       return text;
     });
 
-    const name = used.myMemory && !used.google ? '免费接口（MyMemory）'
-               : used.google && !used.myMemory ? '免费接口（Google）'
-               : '免费接口';
+    const sources = [];
+    if (used.myMemory) sources.push('MyMemory');
+    if (used.edge) sources.push('微软 Edge');
+    if (used.google) sources.push('Google');
+    const name = '免费接口（' + (sources.join(' + ') || '未知') + '）';
     return { text: results.join('\n\n'), source: name };
   }
 
@@ -522,8 +562,8 @@
     store.set(KEYS.tcache, map);
   }
 
-  /** 中译英总入口 */
-  async function translateToEnglish(zh) {
+  /** 中译英总入口（onProgress 用于多分块时显示进度） */
+  async function translateToEnglish(zh, onProgress) {
     const s = getSettings();
 
     // 0) 命中缓存则直接返回（无网络请求）
@@ -551,7 +591,7 @@
     }
 
     // 2) 免费接口
-    if (!result) result = await freeTranslate(zh);
+    if (!result) result = await freeTranslate(zh, onProgress);
 
     // 3) 写入缓存
     tcacheSet(cacheKey, result);
@@ -2256,7 +2296,9 @@
       $('#translate-source').textContent = '翻译中…';
 
       try {
-        const r = await translateToEnglish(zh);
+        const r = await translateToEnglish(zh, (done, total) => {
+          if (total > 1) $('#translate-source').textContent = '翻译中 ' + done + '/' + total + ' 段…';
+        });
         enEl.value = r.text;
         $('#translate-source').textContent = '来源：' + r.source + ' · ' +
           new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
@@ -2267,7 +2309,11 @@
       } catch (e) {
         console.error(e);
         $('#translate-source').textContent = '翻译失败';
-        toast('翻译失败：' + (e.message || e), 'err', 5000);
+        let failMsg = String(e.message || e);
+        if (!llmReady(getSettings())) {
+          failMsg += '。小提示：在「设置」中配置 LLM 接口（如 DeepSeek），翻译会更快更稳定';
+        }
+        toast('翻译失败：' + failMsg, 'err', 6000);
       } finally {
         setBusy(btn, false);
       }
