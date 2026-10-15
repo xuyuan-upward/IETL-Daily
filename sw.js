@@ -6,7 +6,7 @@
      首次使用后完全离线可用
    ============================================================ */
 
-const VERSION = 'v1';
+const VERSION = 'v2';   // 每次发布递增：触发 SW 重装、清旧缓存、页面自动刷新到新代码
 const SHELL_CACHE = 'shell-' + VERSION;
 const ASSET_CACHE = 'assets-' + VERSION;
 

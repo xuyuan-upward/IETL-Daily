@@ -13,7 +13,15 @@
 <script>
 if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
   window.addEventListener('load', function () {
-    navigator.serviceWorker.register('sw.js').catch(function () {});
+    // updateViaCache:'none'：sw.js 本身不走 HTTP 缓存，保证版本检查永远拿到最新
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(function () {});
+  });
+  // 新版本 SW 接管后自动刷新一次页面，确保运行的永远是最新代码（防 PWA 驻留旧 JS）
+  var __swRefreshed = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (__swRefreshed) return;
+    __swRefreshed = true;
+    location.reload();
   });
 }
 </script>
