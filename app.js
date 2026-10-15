@@ -2909,6 +2909,54 @@
     renderOfflineTtsStatus();
   }
 
+  /* ---------------- 跟读自动滚动 ----------------
+   * 朗读时屏幕自动跟随当前高亮句；用户手指滑动/滚轮 = 接管屏幕，
+   * 停止操作 5 秒后自动回到当前朗读位置继续跟随。 */
+  const ScrollFollow = {
+    HOLD_MS: 5000,          // 无操作多久后恢复跟随
+    TICK_MS: 500,           // 检查间隔
+    userHold: false,
+    _timer: null,
+    _target: null,
+
+    init() {
+      // 只有「滑动/滚轮」才算用户接管；点击按钮不算，避免按播放后 5 秒不跟随
+      const hold = () => this._hold();
+      document.addEventListener('touchmove', hold, { passive: true, capture: true });
+      document.addEventListener('wheel', hold, { passive: true, capture: true });
+      document.addEventListener('keydown', (e) => {
+        if (/^(INPUT|TEXTAREA)$/.test((e.target && e.target.tagName) || '')) return;
+        if (/^(ArrowUp|ArrowDown|PageUp|PageDown|Home|End| )$/.test(e.key)) hold();
+      });
+      setInterval(() => this._tick(), this.TICK_MS);
+    },
+
+    _hold() {
+      this.userHold = true;
+      clearTimeout(this._timer);
+      this._timer = setTimeout(() => {
+        this.userHold = false;
+        this._target = null;   // 强制重新定位到当前朗读处
+      }, this.HOLD_MS);
+    },
+
+    _tick() {
+      if (this.userHold) return;
+      const el = document.querySelector('#practice-list .sentence.sactive')
+              || document.querySelector('#practice-list .para-card.pactive');
+      if (!el) { this._target = null; return; }
+      if (el === this._target && this._inView(el)) return;   // 已在可视区，不动
+      this._target = el;
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    },
+
+    _inView(el) {
+      const r = el.getBoundingClientRect();
+      const h = window.innerHeight || document.documentElement.clientHeight;
+      return r.top > h * 0.15 && r.bottom < h * 0.85;
+    }
+  };
+
   function init() {
     buildWordMap();
     buildColloWordMap();
@@ -2916,6 +2964,7 @@
     initSettingsUI();
     loadDraft();
     bindEvents();
+    ScrollFollow.init();
 
     // 初始字数
     $('#zh-count').textContent = ($('#zh-input').value || '').replace(/\s/g, '').length + ' 字';
