@@ -153,6 +153,12 @@ async function ensureOpfs(voice, onProgress) {
    ------------------------------------------------------------ */
 
 function createSession(voice, onProgress) {
+  // piper-tts-web 的 TtsSession 是「单例」：再次 create 只会复用旧实例、
+  // 改一下 voiceId 标签就返回，ONNX 模型根本不会重载（切语音后声音不变的根因）。
+  // 语音不同时先重置单例，强制它真正装载新模型；旧模型失去引用后随 GC 释放。
+  if (TtsSession._instance && TtsSession._instance.voiceId !== voice.id) {
+    TtsSession._instance = null;
+  }
   return TtsSession.create({
     voiceId: voice.id,
     wasmPaths: {
