@@ -1340,7 +1340,7 @@
 
     play(i) {
       if (i < 0 || i >= this.paras.length) return;
-      // 再点同一段 = 暂停 / 继续
+      // 卡片上的播放按钮：再点同一段 = 暂停 / 继续
       if (this.activeIdx === i && this.state === 'playing') { this.pause(); return; }
       if (this.activeIdx === i && this.state === 'paused') { this.resume(); return; }
 
@@ -1348,6 +1348,15 @@
       this.activeIdx = i;
       this.state = 'playing';
       this._speakLoop(++this._token);
+    },
+
+    /** 点段落文本/空白处：不管当前什么状态，都从头重读这一段（暂停/继续只走卡片按钮） */
+    restart(i) {
+      if (i < 0 || i >= this.paras.length) return;
+      TTS.stop();           // 停掉整篇播放，避免两个声音叠在一起
+      this.activeIdx = i;
+      this.state = 'playing';
+      this._speakLoop(++this._token);   // token 自增让正在播的音频自然失效
     },
 
     _speakLoop(token) {
@@ -1450,17 +1459,9 @@
     }
   };
 
-  /** 单句点读：停掉其他播放，只朗读点击的这一句并整句高亮；再点同一句 = 停止 */
+  /** 单句点读：停掉其他播放，只朗读点击的这一句并整句高亮；再点同一句 = 从头重读 */
   let sentReadToken = 0;
   function playSingleSentence(el) {
-    // 再点正在读的那一句 -> 停止
-    if (el.classList.contains('sentence-reading')) {
-      sentReadToken++;
-      el.classList.remove('sentence-reading');
-      TTS.stop();
-      return;
-    }
-
     TTS.stop();
     ParaPlayers.stop();
     closeWordPop();
@@ -2617,7 +2618,7 @@
         return;
       }
 
-      // 3) 点到英文区域：点中某一句 -> 只读这一句；点段落空白处 -> 读整段
+      // 3) 点到英文区域：点中某一句 -> 只读这一句；点段落空白处 -> 从头重读整段
       const segEn = e.target.closest('.seg-en');
       if (segEn) {
         const sentEl = e.target.closest('.sentence');
@@ -2625,7 +2626,7 @@
           playSingleSentence(sentEl);
         } else {
           closeWordPop();
-          ParaPlayers.play(idx);
+          ParaPlayers.restart(idx);   // 点段落 = 从头重读（暂停/继续用卡片按钮）
         }
       }
     });
