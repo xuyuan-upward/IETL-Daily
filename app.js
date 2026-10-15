@@ -400,6 +400,21 @@
     }
   }
 
+  /** 把网络/接口错误翻译成可操作的诊断建议（连通性测试用） */
+  function describeNetError(e) {
+    const msg = String(e && e.message ? e.message : e);
+    if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
+      return msg + '（浏览器无法建立连接：检查 Base URL 是否以 https:// 开头、拼写是否正确、当前网络能否访问该域名）';
+    }
+    if (/HTTP 401|HTTP 403/.test(msg)) return msg + '（API Key 错误、失效或没有权限，请到平台重新生成 Key）';
+    if (/HTTP 402/.test(msg)) return msg + '（账户余额不足，请充值后重试）';
+    if (/HTTP 404/.test(msg)) return msg + '（接口路径不存在：Base URL 不要自己加 /chat/completions，模型名确认拼写）';
+    if (/HTTP 429/.test(msg)) return msg + '（请求太频繁被限流，稍等片刻再试）';
+    if (/HTTP 5\d\d/.test(msg)) return msg + '（服务端故障，稍后重试或查看平台状态页）';
+    if (/超时/.test(msg)) return msg + '（服务器响应太慢或网络不稳定，可再点一次测试）';
+    return msg;
+  }
+
   /** 调用 OpenAI 兼容的 /chat/completions */
   async function llmChat(messages, s, temperature) {
     const url = String(s.baseUrl).replace(/\/+$/, '') + '/chat/completions';
@@ -2547,7 +2562,7 @@
         msg.textContent = '✓ 连通成功。模型返回：' + reply.slice(0, 60);
         msg.style.color = 'var(--ok)';
       } catch (e) {
-        msg.textContent = '✗ 连接失败：' + (e.message || e);
+        msg.textContent = '✗ 连接失败：' + describeNetError(e);
         msg.style.color = 'var(--danger)';
       } finally {
         setBusy(btn, false);

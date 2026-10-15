@@ -192,15 +192,15 @@ if ('serviceWorker' in navigator && location.protocol.indexOf('http') === 0) {
         <label class="field">
           <span class="field-label">Base URL</span>
           <input type="text" id="set-baseurl" class="input"
-            placeholder="https://api.openai.com/v1">
+            placeholder="DeepSeek 填 https://api.deepseek.com（不要加 /chat/completions）">
         </label>
         <label class="field">
           <span class="field-label">API Key</span>
-          <input type="password" id="set-apikey" class="input" placeholder="sk-…（仅保存在你本地浏览器）">
+          <input type="password" id="set-apikey" class="input" placeholder="sk-…（platform.deepseek.com 创建，仅保存在你本地浏览器）">
         </label>
         <label class="field">
           <span class="field-label">模型名</span>
-          <input type="text" id="set-model" class="input" placeholder="gpt-4o-mini / deepseek-chat / qwen-plus">
+          <input type="text" id="set-model" class="input" placeholder="DeepSeek 填 deepseek-chat；也可用 gpt-4o-mini / qwen-plus">
         </label>
 
         <div class="divider">离线朗读语音包（内置英美音 × 男女声，无需联网、无需 API Key）</div>
