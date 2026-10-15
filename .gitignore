@@ -8,3 +8,8 @@
 # 系统文件
 Thumbs.db
 .DS_Store
+
+# Android 签名密钥与 TWA 工程（密钥绝不能进仓库）
+android-keystore.jks
+twa/
+node_modules/

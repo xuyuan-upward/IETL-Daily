@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "app.xuyuan.ietldaily",
+    "sha256_cert_fingerprints": [
+      "98:0B:DF:3B:DE:E1:33:54:72:46:9C:F7:81:7D:EC:C3:17:5E:81:D8:55:B5:1E:D2:C2:43:6D:5F:42:3B:06:86"
+    ]
+  }
+}]
