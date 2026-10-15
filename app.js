@@ -355,6 +355,29 @@
      翻译引擎
      ========================================================== */
 
+  /** 智能分段：一整坨无换行的中文日记 → 按「话题/时间流转」切成自然段，
+   *  让逐段练习按场景呈现，也让 LLM 有段落结构可保留。 */
+  const PARA_BREAK_HINTS = /^(然后|接着|随后|之后|事后|早上|上午|中午|下午|傍晚|晚上|夜里|深夜|到了|回到|回到家|回到宿舍|到公司|到工位|到学校|出门|路上|下班后|放学|吃完饭|吃完|饭后|午休|午睡|睡前|起床后|醒来|洗完澡|回到家后)/;
+
+  function autoSegmentDiary(zh) {
+    if (/\n/.test(zh)) return zh;   // 已有换行，尊重用户手动分段
+    const sents = zh.split(/(?<=[。！？!?])/).map((s) => s.trim()).filter(Boolean);
+    if (sents.length <= 2) return zh;
+
+    const paras = [];
+    let cur = '';
+    sents.forEach((sent) => {
+      const wouldLen = (cur + sent).length;
+      if (cur && ((cur.length >= 90 && PARA_BREAK_HINTS.test(sent)) || wouldLen >= 170)) {
+        paras.push(cur);
+        cur = '';
+      }
+      cur += sent;
+    });
+    if (cur) paras.push(cur);
+    return paras.length > 1 ? paras.join('\n\n') : zh;
+  }
+
   /** 按段落/句子边界把长文本切成小块（免费接口有长度限制） */
   function chunkText(text, maxLen) {
     const paras = text.split(/\n+/).map((p) => p.trim()).filter(Boolean);
@@ -517,7 +540,12 @@
    *  各分块并行请求（最多 3 路），每块依次尝试 MyMemory → 微软 Edge → Google gtx，
    *  全部失败时聚合各接口的真实错误，便于定位是网络问题还是配额问题。 */
   async function freeTranslate(zh, onProgress) {
-    const chunks = chunkText(zh, 400);
+    // 以段落为最小翻译单元，保证中英段落一一对应；超长段落再细分
+    const chunks = [];
+    zh.split(/\n+/).map((s) => s.trim()).filter(Boolean).forEach((para) => {
+      if (para.length <= 400) chunks.push(para);
+      else chunkText(para, 400).forEach((c) => chunks.push(c));
+    });
     const used = { myMemory: false, edge: false, google: false };
     let done = 0;
 
@@ -1693,6 +1721,18 @@
   function alignParagraphs(zh, en) {
     const zp = zh.split(/\n+/).map((s) => s.trim()).filter(Boolean);
     const ep = en.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+
+    // LLM 偶尔不守段落约定：英文段数少于中文时，
+    // 反复把最长的英文段从中间句子处拆开，直到数量对齐
+    let guard = 0;
+    while (ep.length < zp.length && guard++ < 30) {
+      let idx = 0;
+      for (let i = 1; i < ep.length; i++) if (ep[i].length > ep[idx].length) idx = i;
+      const sents = ep[idx].split(/(?<=[.!?])\s+/).filter(Boolean);
+      if (sents.length < 2) break;
+      const mid = Math.ceil(sents.length / 2);
+      ep.splice(idx, 1, sents.slice(0, mid).join(' '), sents.slice(mid).join(' '));
+    }
     return ep.map((e, i) => ({ zh: zp[i] || '', en: e }));
   }
 
@@ -2303,8 +2343,17 @@
 
     // 翻译
     $('#btn-translate').addEventListener('click', async () => {
-      const zh = zhEl.value.trim();
+      let zh = zhEl.value.trim();
       if (!zh) { toast('请先输入中文内容', 'err'); return; }
+
+      // 一整坨无换行的日记 → 智能分段，让逐段练习按场景呈现
+      const segmented = autoSegmentDiary(zh);
+      if (segmented !== zh) {
+        zh = segmented;
+        zhEl.value = segmented;
+        saveDraft();
+        toast('已自动按话题分段（可直接在文本框调整换行）', 'ok', 3000);
+      }
 
       const btn = $('#btn-translate');
       setBusy(btn, true, '翻译中…');

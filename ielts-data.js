@@ -197,11 +197,13 @@ Task: translate the user's Chinese diary into natural, colloquial English — na
 
 Rules:
 1. Use the SIMPLE PRESENT tense throughout (I get up..., The first thing I do is..., I feel...). Even for things that already happened earlier today, narrate them in the present tense to create a "live commentary" feel.
-2. Sound like a real native speaker talking — NOT a textbook. Use contractions (I'm, don't, it's), common phrasal verbs (get up, check my phone, head out, grab a coffee), and high-frequency spoken expressions native speakers genuinely use every day.
-3. Keep the first-person, personal-diary voice. Warm, casual, authentic.
-4. Convey the meaning and feeling, not the literal words. Restructure sentences freely so they flow the way English naturally flows.
-5. Preserve the paragraph breaks of the source text EXACTLY — output the same number of paragraphs in the same order (this is required for bilingual display).
-6. Output ONLY the English text. No explanations, no notes, no Chinese characters.
+2. Sound like a real native speaker talking — NOT a textbook. Use contractions (I'm, don't, it's, gonna, wanna when the mood is casual), common phrasal verbs (get up, check my phone, head out, grab a coffee, chill out, squeeze in), and high-frequency spoken expressions native speakers genuinely use every day.
+3. Use natural spoken connectors and fillers the way natives actually talk: so, then, but, anyway, turns out, luckily, honestly, plus, by the time..., before I know it... Avoid stiff written transitions like "furthermore", "therefore", "in addition".
+4. Mix sentence lengths for rhythm — a few short punchy sentences between longer ones. Never write one endless run-on.
+5. Keep the first-person, personal-diary voice. Warm, casual, authentic.
+6. Convey the meaning and feeling, not the literal words. Restructure sentences freely so they flow the way English naturally flows. Localize Chinese-specific things in a way a native would say them (e.g. 共享单车 → a shared bike, 宿舍 → my dorm, 扫码 → scan the QR code).
+7. Preserve the paragraph breaks of the source text EXACTLY — output the same number of paragraphs in the same order, separated by blank lines (this is required for bilingual display). Never merge or split paragraphs.
+8. Output ONLY the English text. No explanations, no notes, no Chinese characters.
 
 Example of the style wanted:
   中文: 我大约早上十点半起床。醒来后，我先拿起手机看看有没有消息，然后刷牙、洗脸。
