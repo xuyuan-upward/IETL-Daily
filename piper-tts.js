@@ -61,6 +61,7 @@ const audioCache = new Map();   // (voiceId|text) -> objectURL
 let session = null;
 let sessionVoiceId = '';        // session 当前装载的语音包
 let sessionPromise = null;
+let sessionPromiseVoiceId = ''; // sessionPromise 正在为哪个语音包装载
 let status = 'idle';            // idle | loading | ready | error
 let lastError = '';
 let progressText = '';
@@ -168,16 +169,30 @@ function init(onProgress) {
     return Promise.reject(new Error(unsupportedReason));
   }
   if (session && sessionVoiceId === currentVoiceId) return Promise.resolve(session);
-  if (sessionPromise) return sessionPromise;
+  if (sessionPromise) {
+    // 同一个语音包正在装载：直接复用
+    if (sessionPromiseVoiceId === currentVoiceId) return sessionPromise;
+    // 旧语音包还在装载：排在其后，收尾丢弃后再装当前语音（避免两个模型同时进内存）
+    return sessionPromise.catch(() => { /* 忽略旧装载结果 */ }).then(() => init(onProgress));
+  }
 
   const voice = currentVoice();
   status = 'loading';
   lastError = '';
   progressText = '正在装载语音包「' + voice.label + '」…';
 
+  sessionPromiseVoiceId = voice.id;
   sessionPromise = ensureOpfs(voice, onProgress)
     .then(() => createSession(voice, onProgress))
     .then((s) => {
+      sessionPromise = null;
+      sessionPromiseVoiceId = '';
+      if (voice.id !== currentVoiceId) {
+        // 装载期间用户又切换了发音人：丢弃旧会话，改装当前语音包
+        status = 'idle';
+        progressText = '';
+        return init(onProgress);
+      }
       session = s;
       sessionVoiceId = voice.id;
       status = 'ready';
@@ -186,6 +201,7 @@ function init(onProgress) {
     })
     .catch((e) => {
       sessionPromise = null;
+      sessionPromiseVoiceId = '';
       status = 'error';
       lastError = e && e.message ? e.message : String(e);
       progressText = '';
@@ -364,7 +380,9 @@ window.PiperTTS = {
   get voiceId() { return currentVoiceId; },
   get voiceLabel() { return currentVoice().label; },
 
-  /** 切换语音包：下次合成时自动装载对应模型（已合成的缓存不串音） */
+  /** 切换语音包：下次合成时自动装载对应模型（已合成的缓存不串音）。
+   *  注意：sessionPromise 故意保留——若旧语音仍在装载，init 会等它收尾后丢弃再装新语音，
+   *  避免两个 60MB 模型同时进内存。 */
   setVoice(id) {
     if (!VOICES.some((v) => v.id === id) || id === currentVoiceId) return false;
     currentVoiceId = id;

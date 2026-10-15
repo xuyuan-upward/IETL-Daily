@@ -1130,6 +1130,7 @@
       this._restartOnResume = false;
       this._token++;   // 让正在进行的云端合成/播放失效
       this._stopKeepAlive();
+      this._prefetch = { text: '', promise: null };   // 预取一并作废（切换语音后防止旧声音被消费）
       this.wordHook = null;
       SentTracker.detach();
       if (this._audio) { try { this._audio.pause(); this._audio.currentTime = 0; } catch (e) { /* 忽略 */ } }
@@ -2433,8 +2434,19 @@
       // 内置离线语音包：走 PiperTTS 切换（与系统语音的 voiceURI 区分开）
       if (val.indexOf('__local__:') === 0 && window.PiperTTS) {
         if (window.PiperTTS.setVoice(val.slice('__local__:'.length))) {
-          toast('发音人切换为：' + window.PiperTTS.voiceLabel + '（首次播放需装载模型，稍候片刻）', 'ok', 2600);
+          // 立即停掉旧发音人的播放与预取，避免继续听到旧声音
+          TTS.stop();
+          ParaPlayers.stop();
           renderVoiceSelect();
+
+          // 马上预载新语音包：装载期间点播放会自动排队等待，完成后提示就绪
+          const label = window.PiperTTS.voiceLabel;
+          toast('正在装载「' + label + '」语音包，完成后会提示…', 'info', 2600);
+          window.PiperTTS.warmup(showTtsProgress).then((ok) => {
+            renderVoiceSelect();
+            if (ok) toast('「' + label + '」已就绪，点击播放即可', 'ok', 3200);
+            else toast('「' + label + '」装载失败：' + (window.PiperTTS.error || '未知错误'), 'err', 4500);
+          });
         }
         return;
       }
